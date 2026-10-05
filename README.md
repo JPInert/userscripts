@@ -1,11 +1,12 @@
 # userscripts
 
-Small browser userscripts I use every day: a clipboard history that follows me across every tab, and a read-only Walmart shopping list helper.
+Small browser userscripts I use every day: canned replies with an AI rewrite for Zendesk, a clipboard history that follows me across every tab, and a read-only Walmart shopping list helper.
 
 > **Status: work in progress.** These run in my browser daily and still change. The Walmart one was written for my own list first, so expect to edit the list for yours.
 
 | Script | What it does |
 |---|---|
+| [canned-responses.user.js](canned-responses.user.js) | A snippet library for the Zendesk agent workspace reply box: store, edit, pin, search and insert canned replies, with optional "Revise" through a local model server that you can always revert. |
 | [clipboard_scratchpad.user.js](clipboard_scratchpad.user.js) | A small draggable panel on every page with your last 100 copies (Ctrl+C or right-click Copy) and an autosaving notes field. Click an entry to copy it again. Synced live across tabs. |
 | [walmart_mealplan_list.user.js](walmart_mealplan_list.user.js) | Walks a fixed shopping list on walmart.com one item at a time, highlights the matching product, and checks the cart against the list. Read-only: you click Add. |
 
@@ -13,11 +14,52 @@ Also mine, published separately: **[gmaps-layers](https://github.com/JPInert/gma
 
 ## Why I built it
 
+**Canned responses.** I answer a high volume of support tickets in Zendesk, and many replies are close variations of the same few answers. I wanted fast, consistent replies a click away, plus an AI rewrite of my draft that never clobbers what I typed.
+
 **Clipboard scratchpad.** I move IDs, names and snippets between half a dozen web tools all day, and the system clipboard holds exactly one thing. I wanted every copy kept, one click to reuse it, and a scratch notes field that's on whatever tab I'm in.
 
 **Walmart shopping pilot.** We buy a costed monthly meal plan for two at Walmart, two shops a month. Typing each item into search and checking size and price by hand went wrong in small ways: a wrong size, a near-miss product, an item forgotten. This walks the list for me and audits the cart before checkout.
 
 ## How it works
+
+
+### Canned responses
+
+- Runs only on `https://*.zendesk.com/agent/*`. A draggable panel with **Insert** and **Manage** tabs; click the side tab to collapse it. Position and the open tab are remembered.
+- **Snippets** have a title, tags and a body. Search matches all three. Pinned snippets sort to the top. Export and import as JSON (import adds new ones and updates matching IDs). Three neutral examples are added on first run; edit or delete them.
+- **Links**: write bare URLs or Markdown `[text](url)` in a snippet. They become real links when inserted. In the editor, select text and paste a URL to wrap it as a link.
+- **Inserting**: Zendesk's reply box is CKEditor 5, which keeps its own document model. Typing into the page, `execCommand`, or a synthetic paste with only plain text is ignored. The script sends a paste event that carries HTML, which CKEditor accepts through its own clipboard handling, so the snippet lands at the cursor with its line breaks and links.
+- **Simplify** (sparkle button next to the composer's mic): opens Zendesk's own "Enhance writing" menu and presses Simplify. Zendesk's built-in AI does the rewrite; the script only presses its buttons. Needs that feature on your Zendesk plan.
+- **Revise** (panel button, or the second button next to the mic): sends the current draft to a local server you run, and puts the reply in the box.
+  - If you edit the draft while the request is running, the result is thrown away and you are told. It never overwrites typing.
+  - **Revert** restores your original draft. Originals are kept per editor, because Zendesk keeps several tickets' reply boxes open at once; Revert on one ticket can never paste another ticket's text. Revising twice still reverts to what you first wrote. If you edited after revising, Revert asks first.
+- **Page functions** for an outside automation (for example a Playwright script calling `page.evaluate`). They use your own logged-in Zendesk on the same site:
+  - `insertCannedResponse(title)` inserts a snippet at the cursor.
+  - `insertCannedResponsePipeline(title)` replaces the draft with the snippet, sets the greeting and sign-off from settings, then removes any CC or follower that matches the "remove CC" setting.
+  - `mergeRelatedTickets(requesterEmail, keywords)` finds the same requester's other open tickets (optionally only subjects containing a keyword) and merges them into the current ticket.
+  - `mergeDuplicates(ticketIds)` merges a list of ticket IDs you already picked.
+  - Both merge functions **always show a confirm dialog** listing each ticket number and subject first. Merging closes tickets and cannot be undone, so nothing merges without a person clicking OK. Merge notes are internal, not public.
+
+#### Settings (Manage tab, bottom)
+
+| Setting | Default | What it does |
+|---|---|---|
+| Revise server URL | `http://127.0.0.1:8765` | Where Revise sends the draft. Any port you like. Blank turns Revise off (the buttons stay and say no server is set). |
+| Revise instructions | a generic "tighten this reply, keep every fact and link" prompt | Sent to the server with each request. |
+| Pipeline greeting | `Hi there,` | Replaces the snippet's opening line in the pipeline insert. |
+| Pipeline signature | `Best,` / `Your support team` | Replaces the snippet's closing in the pipeline insert. |
+| Remove CC/follower matching | blank | An email (exact) or part of a name. Matching CCs and followers are removed by the pipeline insert, for example your team's shared address. Blank removes nobody. |
+
+#### The Revise server
+
+Not included: bring your own. It must accept:
+
+```
+POST /api/revise
+{"html": "<p>draft</p>", "greeting": "Good Morning,", "instructions": "..."}
+```
+
+and answer `{"ok": true, "html": "<p>revised</p>", "duration_ms": 1234}`, or `{"ok": false, "error": "..."}`. It must allow CORS from your Zendesk origin. The whole draft is sent as written, so run it on your own machine and only send what your workplace allows.
 
 ### Clipboard scratchpad
 
@@ -64,6 +106,7 @@ Firefox needs nothing extra.
 
 Open the raw file. The extension recognises the `.user.js` file and shows an install page; click **Install** (or **Confirm installation**).
 
+- **[canned-responses.user.js](https://raw.githubusercontent.com/JPInert/userscripts/main/canned-responses.user.js)**
 - **[clipboard_scratchpad.user.js](https://raw.githubusercontent.com/JPInert/userscripts/main/clipboard_scratchpad.user.js)**
 - **[walmart_mealplan_list.user.js](https://raw.githubusercontent.com/JPInert/userscripts/main/walmart_mealplan_list.user.js)**
 
@@ -79,10 +122,17 @@ To update later, the extension checks for new versions on its own, or open the i
 
 ## What I checked
 
-- `node --check` passes on both scripts.
+- `node --check` passes on all three scripts.
 - Clipboard scratchpad: I run it daily across many tabs; this published copy differs only in its header. Tested in headless Chromium with stand-in storage: two copies are captured newest first, and copied `<img onerror>` markup shows as plain text and never runs.
-- It only reads pages you opened: no clicks, submits or requests on walmart.com.
-- Not checked for this published version: the current Walmart page layout. My own copy runs on my shops; treat the first run of this file as untested.
+- Walmart: it only reads pages you opened, with no clicks, submits or requests on walmart.com.
+- Walmart, not checked for this published version: the current page layout. My own copy runs on my shops; treat the first run of this file as untested.
+
+**Canned responses:**
+
+- `node --check` passes.
+- The repo scanner finds no secrets, private IPs, paths or names. Its only hits are the word "Zendesk", which is the product it runs on.
+- A small Node harness with stubbed browser objects ran the page functions: the pipeline insert sets the greeting, links and signature; CC removal does nothing when the setting is blank and removes only the match when set; both merge paths send nothing when the confirm is declined, and merge after OK.
+- **Not checked here:** I could not test this against a live Zendesk. The panel, Insert, Revise, Revert and Simplify were not run in a browser for this version. Zendesk's page selectors (`data-test-id` names, CKEditor classes) are whatever Zendesk shipped when I wrote it and can change. Snippet storage moved from my own server to the userscript manager's storage for this public version, and that code is new.
 
 ## Built with Claude Code
 
