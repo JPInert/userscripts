@@ -1,20 +1,31 @@
 # userscripts
 
-Small browser userscripts I use every day. The first one here walks a grocery list on Walmart; more will be added.
+Small browser userscripts I use every day: a clipboard history that follows me across every tab, and a read-only Walmart shopping list helper.
 
-> **Status: work in progress.** It runs in my browser and still changes often. It was written for my own list first, so expect to edit the list for yours.
+> **Status: work in progress.** These run in my browser daily and still change. The Walmart one was written for my own list first, so expect to edit the list for yours.
 
 | Script | What it does |
 |---|---|
+| [clipboard_scratchpad.user.js](clipboard_scratchpad.user.js) | A small draggable panel on every page with your last 100 copies (Ctrl+C or right-click Copy) and an autosaving notes field. Click an entry to copy it again. Synced live across tabs. |
 | [walmart_mealplan_list.user.js](walmart_mealplan_list.user.js) | Walks a fixed shopping list on walmart.com one item at a time, highlights the matching product, and checks the cart against the list. Read-only: you click Add. |
 
 Also mine, published separately: **[gmaps-layers](https://github.com/JPInert/gmaps-layers)**, a Google Maps userscript that finds X within N miles of each Y (for example food near Superchargers).
 
 ## Why I built it
 
+**Clipboard scratchpad.** I move IDs, names and snippets between half a dozen web tools all day, and the system clipboard holds exactly one thing. I wanted every copy kept, one click to reuse it, and a scratch notes field that's on whatever tab I'm in.
+
 **Walmart shopping pilot.** We buy a costed monthly meal plan for two at Walmart, two shops a month. Typing each item into search and checking size and price by hand went wrong in small ways: a wrong size, a near-miss product, an item forgotten. This walks the list for me and audits the cart before checkout.
 
 ## How it works
+
+### Clipboard scratchpad
+
+- Listens for the page's native `copy` event, so it captures Ctrl+C and right-click Copy without asking for clipboard read permission. Keeps the last 100 entries with time and site.
+- **Cross-tab sync, two ways.** Changes are pushed to every open tab through the userscript manager's value-change events. Those don't reliably reach background, frozen or back/forward-cached tabs, so each tab also re-reads storage whenever it becomes visible or gets focus.
+- **Never wipes another tab's work.** Before deleting or clearing, it re-reads storage first, so a tab with a stale copy can't save over entries other tabs added. Notes don't overwrite you mid-typing.
+- **Safe rendering.** Copied text is shown with `textContent`, never as HTML, so copying markup or script-looking text can't inject anything into the panel.
+- Pause capture, clear with a confirm, drag to move (position remembered), click the header to collapse.
 
 ### Walmart shopping pilot
 
@@ -53,6 +64,7 @@ Firefox needs nothing extra.
 
 Open the raw file. The extension recognises the `.user.js` file and shows an install page; click **Install** (or **Confirm installation**).
 
+- **[clipboard_scratchpad.user.js](https://raw.githubusercontent.com/JPInert/userscripts/main/clipboard_scratchpad.user.js)**
 - **[walmart_mealplan_list.user.js](https://raw.githubusercontent.com/JPInert/userscripts/main/walmart_mealplan_list.user.js)**
 
 To update later, the extension checks for new versions on its own, or open the install link again. To remove one, delete it from the extension's dashboard.
@@ -67,7 +79,8 @@ To update later, the extension checks for new versions on its own, or open the i
 
 ## What I checked
 
-- `node --check` passes.
+- `node --check` passes on both scripts.
+- Clipboard scratchpad: I run it daily across many tabs; this published copy differs only in its header. Tested in headless Chromium with stand-in storage: two copies are captured newest first, and copied `<img onerror>` markup shows as plain text and never runs.
 - It only reads pages you opened: no clicks, submits or requests on walmart.com.
 - Not checked for this published version: the current Walmart page layout. My own copy runs on my shops; treat the first run of this file as untested.
 
